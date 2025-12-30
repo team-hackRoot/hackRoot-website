@@ -36819,3 +36819,92 @@ meter {
     transform: translateY(0);
   }
 }
+.captcha-wrap.error .captcha-frame {
+  border-color: rgba(255,77,77,0.8);
+  box-shadow:
+    0 0 0 1px rgba(255,77,77,0.5),
+    0 12px 40px rgba(255,77,77,0.35);
+    
+}
+ /* ===============================
+   CAPTCHA – MOBILE SAFE FIX
+================================ */
+
+.captcha-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;   /* 🔥 critical */
+}
+
+.captcha-frame {
+  /* width: 100%; */
+  max-width: 100%;
+  overflow: hidden;
+}
+/* desktop only */
+@media (min-width: 520px) {
+  .captcha-frame iframe {
+    transform: scale(0.92);
+    transform-origin: left top;
+  }
+}
+
+/* mobile reset */
+@media (max-width: 519px) {
+  .captcha-frame iframe {
+    transform: scale(1);   /* 🔥 important */
+  }
+}
+.premium-form .captcha-wrap {
+  grid-column: 1 / -1;   /* span full width */
+}
+@media (max-width: 520px) {
+  .captcha-frame {
+    padding: 10px;
+    border-radius: 12px;
+  }
+}
+/* ===============================
+   MOBILE FORM SPACING FIX
+================================ */
+@media (max-width: 520px) {
+
+  /* tighten overall panel spacing */
+  .form-panel {
+    gap: 14px;
+    padding: 20px;
+  }
+
+  /* remove double spacing */
+  .premium-form .row {
+    gap: 14px;
+  }
+
+  /* normalize field spacing */
+  .field {
+    margin-bottom: 14px; /* was 22px */
+  }
+
+  /* inputs slightly shorter for mobile */
+  .premium-form input,
+  .premium-form textarea {
+    padding: 14px 14px;
+    font-size: 0.95rem;
+  }
+
+  /* textarea not too tall */
+  .premium-form textarea {
+    min-height: 100px;
+  }
+
+  /* captcha spacing fix */
+  .captcha-wrap {
+    margin-top: 8px;
+  }
+
+  /* submit area breathing room */
+  .form-controls {
+    margin-top: 10px;
+    gap: 10px;
+  }
+}
