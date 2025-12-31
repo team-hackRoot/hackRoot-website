@@ -36908,3 +36908,129 @@ meter {
     gap: 10px;
   }
 }
+/* ==================================================
+   GUARANTEED SAFE MOBILE — 375px & ABOVE
+================================================== */
+@media (max-width: 420px) {
+
+  /* ---------- PANEL ---------- */
+  .form-panel {
+    padding: 16px;
+    gap: 12px;
+    border-radius: 16px;
+  }
+
+  .premium-form .row {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .field {
+    margin-bottom: 12px;
+  }
+
+  /* ---------- INPUTS ---------- */
+  .premium-form input,
+  .premium-form textarea {
+    padding: 12px 12px;
+    font-size: 0.92rem;
+    border-radius: 11px;
+  }
+
+  .premium-form textarea {
+    min-height: 90px;
+  }
+
+  /* ---------- PHONE FIELD (CRITICAL FIX) ---------- */
+  .phone-field {
+    align-items: stretch;
+  }
+
+  .phone-field .country {
+    padding: 0 10px;
+    font-size: 0.88rem;
+    border-radius: 11px 0 0 11px;
+  }
+
+  .phone-field input {
+    padding-left: 50px !important;   /* 🔥 reduced for 375px */
+    border-radius: 0 11px 11px 0;
+  }
+
+  .phone-field label {
+    left: 50px;
+  }
+
+  .phone-field input:focus + label,
+  .phone-field input:not(:placeholder-shown) + label {
+    left: 46px;
+  }
+
+  /* ---------- CAPTCHA (NO JUMP, NO OVERFLOW) ---------- */
+  .captcha-wrap {
+    margin-top: 6px;
+  }
+
+  .captcha-frame {
+    padding: 6px;
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .captcha-frame iframe {
+    max-width: 100%;
+    transform: scale(0.94);
+    transform-origin: center top;
+  }
+
+  /* ---------- SUBMIT ---------- */
+  .form-controls {
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  .submit-btn {
+    width: 100%;
+    height: 46px;
+    font-size: 0.94rem;
+    border-radius: 14px;
+  }
+
+  .status-msg {
+    font-size: 0.85rem;
+    text-align: center;
+  }
+}
+/* MESSAGE BOX — STABLE & PREMIUM */
+.premium-form textarea {
+  min-height: 110px;   /* desktop */
+  max-height: 160px;
+  resize: vertical;    /* user-controlled only */
+  overflow-y: auto;
+}
+@media (max-width: 420px) {
+  .premium-form textarea {
+    min-height: 90px;
+    max-height: 130px;
+    resize: none;      /* 🔥 important for mobile */
+  }
+}
+
+/* Make all NON-lead cards identical */
+.team-member-card:not(.lead) {
+  height: 420px;
+  display: flex;
+  flex-direction: column;
+}
+.team-member-card:not(.lead) .team-member-avatar {
+  height: 170px;
+}
+.team-member-card:not(.lead) .team-member-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.team-member-card:not(.lead) .team-profile-btn {
+  margin-top: auto;
+}
