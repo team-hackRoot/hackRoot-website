@@ -386,25 +386,18 @@ table{border-collapse:collapse}
 # ===============================
 # EMAIL QUEUE
 # ===============================
-mail_queue = queue.Queue()
+def send_mail(msg):
+    try:
+        print("📨 Sending mail to:", msg["To"])
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+            server.set_debuglevel(1)
+            server.starttls()
+            server.login(SMTP_USER, SMTP_PASS)
+            server.send_message(msg)
+        print("✅ Mail sent")
+    except Exception as e:
+        print("❌ SMTP ERROR:", e)
 
-def mail_worker():
-    while True:
-        msg = mail_queue.get()
-        if msg is None:
-            break
-        try:
-            with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-                server.starttls()
-                server.login(SMTP_USER, SMTP_PASS)
-                server.send_message(msg)
-        finally:
-            mail_queue.task_done()
-
-threading.Thread(target=mail_worker, daemon=True).start()
-
-def enqueue(msg):
-    mail_queue.put(msg)
 def send_support_notification(name, email, phone, github, message):
     year = datetime.datetime.now().year
 
@@ -430,7 +423,7 @@ Year: {year}
     msg["Subject"] = f"📩 New Enquiry from {name}"
     msg.set_content(body)
 
-    enqueue(msg)
+    send_mail(msg)
 
 # ===============================
 # ROUTES
@@ -510,7 +503,7 @@ def submit():
     msg.attach(MIMEText("Thank you for contacting HackRoot.", "plain"))
     msg.attach(MIMEText(html_body, "html"))
 
-    enqueue(msg)
+    send_mail(msg)
     send_support_notification(
     name=name,
     email=email,
