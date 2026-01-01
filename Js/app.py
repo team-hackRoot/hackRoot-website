@@ -1,24 +1,15 @@
 #!/usr/bin/env python3
 import os
-import smtplib
-import threading
-import queue
 import datetime
 import html as html_lib
 import re
 import requests
 
-from email.message import EmailMessage
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-
+from flask import Flask, request
+from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from flask_cors import CORS
-
-from flask import Flask, request, jsonify, render_template_string
 from dotenv import load_dotenv
-
 
 # ===============================
 # LOAD ENV
@@ -27,44 +18,22 @@ load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
+
 limiter = Limiter(
     get_remote_address,
     app=app,
-    default_limits=[]
+    default_limits=["60 per minute"]
 )
-# ===============================
-# RECAPTCHA VERIFY
-# ===============================
-RECAPTCHA_SECRET_KEY = os.getenv("RECAPTCHA_SECRET_KEY")
-print("RECAPTCHA_SECRET_KEY =", RECAPTCHA_SECRET_KEY)
 
-def verify_recaptcha(token, ip):
-    try:
-        r = requests.post(
-            "https://www.google.com/recaptcha/api/siteverify",
-            data={
-                "secret": RECAPTCHA_SECRET_KEY,
-                "response": token,
-                "remoteip": ip
-            },
-            timeout=5
-        )
-        return r.json().get("success", False)
-    except Exception:
-        return False
+app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY")
 
-app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "dev")
-
-SMTP_HOST = os.getenv("SMTP_HOST")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER")
-SMTP_PASS = os.getenv("SMTP_PASS")
-
+RESEND_API_KEY = os.getenv("RESEND_API_KEY")
 SYSTEM_SENDER_EMAIL = os.getenv("SYSTEM_SENDER_EMAIL")
 SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL")
+RECAPTCHA_SECRET_KEY = os.getenv("RECAPTCHA_SECRET_KEY")
 
 # ===============================
-# FULL PREMIUM HTML EMAIL (100% AS IS)
+# PASTE YOUR PREMIUM HTML HERE
 # ===============================
 PREMIUM_HTML_TEMPLATE = """<!doctype html>
 <html lang="en">
@@ -384,157 +353,151 @@ table{border-collapse:collapse}
 """
 
 # ===============================
-# EMAIL QUEUE
+# RECAPTCHA VERIFY
 # ===============================
-mail_queue = queue.Queue()
+def verify_recaptcha(token, ip):
+    try:
+        r = requests.post(
+            "https://www.google.com/recaptcha/api/siteverify",
+            data={
+                "secret": RECAPTCHA_SECRET_KEY,
+                "response": token,
+                "remoteip": ip
+            },
+            timeout=5
+        )
+        return r.json().get("success", False)
+    except Exception:
+        return False
 
-def mail_worker():
-    while True:
-        msg = mail_queue.get()
-        if msg is None:
-            break
-        try:
-            with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-                server.starttls()
-                server.login(SMTP_USER, SMTP_PASS)
-                server.send_message(msg)
-        finally:
-            mail_queue.task_done()
+# ===============================
+# RESEND SEND FUNCTION
+# ===============================
+def send_email(to, subject, html, reply_to=None):
+    payload = {
+        "from": SYSTEM_SENDER_EMAIL,
+        "to": to,
+        "subject": subject,
+        "html": html
+    }
+    if reply_to:
+        payload["reply_to"] = reply_to
 
-def enqueue(msg):
-    mail_queue.put(msg)
-def send_support_notification(server, name, email, phone, github, message):
-    year = datetime.datetime.now().year
+    r = requests.post(
+        "https://api.resend.com/emails",
+        headers={
+            "Authorization": f"Bearer {RESEND_API_KEY}",
+            "Content-Type": "application/json"
+        },
+        json=payload,
+        timeout=3
+    )
 
-    body = f"""
-New contact enquiry received on HackRoot
-
-Name   : {name}
-Email  : {email}
-Phone  : {phone}
-Profile: {github}
-
-Message:
-{message}
-
----
-Year: {year}
-"""
-
-    msg = EmailMessage()
-    msg["From"] = f"HackRoot Enquiry <{SMTP_USER}>"
-    msg["To"] = SUPPORT_EMAIL
-    msg["Reply-To"] = email
-    msg["Subject"] = f"📩 New Enquiry from {name}"
-    msg.set_content(body)
-
-    server.send_message(msg)
-
+    if r.status_code >= 300:
+        raise Exception(r.text)
 
 # ===============================
 # ROUTES
 # ===============================
-@app.route("/", methods=["GET"])
-def home():
-    return """
-    <h2>HackRoot Contact Test</h2>
-    <form method="POST" action="/submit">
-      <input name="name" placeholder="Name" required><br><br>
-      <input name="email" type="email" placeholder="Email" required><br><br>
-      <input name="phone" placeholder="Phone"><br><br>
-      <input name="github" placeholder="Profile"><br><br>
-      <textarea name="message" placeholder="Message"></textarea><br><br>
-      <button type="submit">Send</button>
-    </form>
-    """
-import time   # 🔴 make sure this import exists at top
-
 @app.route("/submit", methods=["POST"])
 @limiter.limit("10 per minute")
 def submit():
 
-    # 🛡 1. HONEYPOT (FIRST)
+    # 🛡 Honeypot
     if request.form.get("company"):
         return {"status": "blocked"}, 200
 
-    # ⏱️ 2. TIMING CHECK (SECOND)
-    submitted_at = request.form.get("_ts")
-    if submitted_at:
-        try:
-            delta = time.time() - float(submitted_at)
-            if delta < 3:   # under 3 seconds = bot
-                return {"status": "blocked"}, 200
-        except:
-            pass
-
-    # 🔐 3. CAPTCHA (THIRD)
+    # 🔐 CAPTCHA
     captcha_token = request.form.get("g-recaptcha-response")
-    if not captcha_token:
-        return {"status": "error", "message": "Captcha missing"}, 400
-
-    if not verify_recaptcha(captcha_token, request.remote_addr):
+    if not captcha_token or not verify_recaptcha(captcha_token, request.remote_addr):
         return {"status": "error", "message": "Captcha failed"}, 403
 
-    # ✅ 4. NOW SAFE TO READ REAL DATA
-    name = request.form.get("name","")
-    email = request.form.get("email","")
-    phone = request.form.get("phone","")
-    github = request.form.get("github","")
-    message = request.form.get("message","")
-
-    # rest of your existing logic...
-
-
-    # rest of your logic...
-
+    # 📥 Form data
+    name = request.form.get("name", "").strip()
+    email = request.form.get("email", "").strip()
+    phone = request.form.get("phone", "").strip()
+    github = request.form.get("github", "").strip()
+    message = request.form.get("message", "")
 
     phone_digits = re.sub(r"\D", "", phone)
-    display_phone = f"+91{phone_digits}" if len(phone_digits)==10 else ""
-
+    display_phone = f"+91{phone_digits}" if len(phone_digits) == 10 else ""
     year = datetime.datetime.now().year
 
-    html_body = (PREMIUM_HTML_TEMPLATE
+    # ===============================
+    # MESSAGE HANDLING (PAST APP LOGIC)
+    # ===============================
+    raw_message = message.strip()
+
+    if raw_message:
+        safe_message = html_lib.escape(raw_message)
+        safe_message = (
+            safe_message
+            .replace("\r\n", "<br>")
+            .replace("\n", "<br>")
+            .replace("\r", "<br>")
+        )
+    else:
+        safe_message = (
+            "<em style='color:#cfe7ff;'>"
+            "No message was written. Our team will contact you based on the details provided."
+            "</em>"
+        )
+
+    # ===============================
+    # USER EMAIL (PREMIUM)
+    # ===============================
+    user_html = (
+        PREMIUM_HTML_TEMPLATE
         .replace("__YEAR__", str(year))
         .replace("__NAME__", html_lib.escape(name))
-        .replace("__MESSAGE__", html_lib.escape(message).replace("\\n","<br>"))
+        .replace("__MESSAGE__", safe_message)
         .replace("__PHONE_BLOCK__", f"<br><b>Phone:</b> {display_phone}" if display_phone else "")
         .replace("__GITHUB_BLOCK__", f"<br><b>Profile:</b> {html_lib.escape(github)}" if github else "")
-        .replace("__RECIPIENT__", SUPPORT_EMAIL)
     )
 
-    msg = MIMEMultipart("alternative")
-    msg["From"] = f"HackRoot Enquiry <{SMTP_USER}>"
-    msg["To"] = email
-    msg["Subject"] = "Thanks for contacting HackRoot"
-    msg.attach(MIMEText("Thank you for contacting HackRoot.", "plain"))
-    msg.attach(MIMEText(html_body, "html"))
+    # ===============================
+    # SUPPORT EMAIL
+    # ===============================
+    support_html = f"""
+    <h3>New HackRoot Enquiry</h3>
+    <p><b>Name:</b> {html_lib.escape(name)}</p>
+    <p><b>Email:</b> {html_lib.escape(email)}</p>
+    <p><b>Phone:</b> {html_lib.escape(display_phone)}</p>
+    <p><b>Profile:</b> {html_lib.escape(github)}</p>
+    <hr>
+    <p><b>Message:</b><br>{safe_message}</p>
+    """
 
+    # ===============================
+    # SEND EMAILS (FAST RESPONSE)
+    # ===============================
     try:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
-            server.starttls()
-            server.login(SMTP_USER, SMTP_PASS)
-
-            server.send_message(msg)
-
-            send_support_notification(
-                server,
-                name=name,
-                email=email,
-                phone=display_phone,
-                github=github,
-                message=message
-)
-
-
+        # 1️⃣ Send user email (wait)
+        send_email(
+            to=[email],
+            subject="Thanks for contacting HackRoot",
+            html=user_html
+        )
     except Exception as e:
-        print("SMTP ERROR:", e)
+        print("User mail failed:", e)
         return {"status": "error", "message": "Mail failed"}, 500
 
-    return {"status": "success"}, 200
+    # 2️⃣ Respond immediately to frontend
+    response = {"status": "success"}
+
+    # 3️⃣ Send support mail (best effort, no delay)
+    try:
+        send_email(
+            to=[SUPPORT_EMAIL],
+            subject=f"📩 New Enquiry from {name}",
+            html=support_html,
+            reply_to=email
+        )
+    except Exception as e:
+        print("Support mail failed:", e)
+
+    return response, 200
 
 
-# ===============================
-# RUN
-# ===============================
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    app.run(host="0.0.0.0", port=5000)
