@@ -401,11 +401,9 @@ def mail_worker():
         finally:
             mail_queue.task_done()
 
-threading.Thread(target=mail_worker, daemon=True).start()
-
 def enqueue(msg):
     mail_queue.put(msg)
-def send_support_notification(name, email, phone, github, message):
+def send_support_notification(server, name, email, phone, github, message):
     year = datetime.datetime.now().year
 
     body = f"""
@@ -424,13 +422,14 @@ Year: {year}
 """
 
     msg = EmailMessage()
-    msg["From"] = f"HackRoot Enquiry <{SYSTEM_SENDER_EMAIL}>"
+    msg["From"] = f"HackRoot Enquiry <{SMTP_USER}>"
     msg["To"] = SUPPORT_EMAIL
     msg["Reply-To"] = email
     msg["Subject"] = f"📩 New Enquiry from {name}"
     msg.set_content(body)
 
-    enqueue(msg)
+    server.send_message(msg)
+
 
 # ===============================
 # ROUTES
@@ -504,22 +503,35 @@ def submit():
     )
 
     msg = MIMEMultipart("alternative")
-    msg["From"] = f"HackRoot <{SYSTEM_SENDER_EMAIL}>"
+    msg["From"] = f"HackRoot Enquiry <{SMTP_USER}>"
     msg["To"] = email
     msg["Subject"] = "Thanks for contacting HackRoot"
     msg.attach(MIMEText("Thank you for contacting HackRoot.", "plain"))
     msg.attach(MIMEText(html_body, "html"))
 
-    enqueue(msg)
-    send_support_notification(
-    name=name,
-    email=email,
-    phone=display_phone,
-    github=github,
-    message=message
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
+            server.starttls()
+            server.login(SMTP_USER, SMTP_PASS)
+
+            server.send_message(msg)
+
+            send_support_notification(
+                server,
+                name=name,
+                email=email,
+                phone=display_phone,
+                github=github,
+                message=message
 )
 
+
+    except Exception as e:
+        print("SMTP ERROR:", e)
+        return {"status": "error", "message": "Mail failed"}, 500
+
     return {"status": "success"}, 200
+
 
 # ===============================
 # RUN
