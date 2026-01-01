@@ -38,6 +38,20 @@ limiter = Limiter(
 RECAPTCHA_SECRET_KEY = os.getenv("RECAPTCHA_SECRET_KEY")
 print("RECAPTCHA_SECRET_KEY =", RECAPTCHA_SECRET_KEY)
 
+def send_mail_async(msg):
+    def _send():
+        try:
+            print("📨 Sending mail to:", msg["To"])
+            with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+                server.starttls()
+                server.login(SMTP_USER, SMTP_PASS)
+                server.send_message(msg)
+            print("✅ Mail sent")
+        except Exception as e:
+            print("❌ SMTP ERROR:", e)
+
+    threading.Thread(target=_send, daemon=True).start()
+
 def verify_recaptcha(token, ip):
     try:
         r = requests.post(
@@ -423,7 +437,7 @@ Year: {year}
     msg["Subject"] = f"📩 New Enquiry from {name}"
     msg.set_content(body)
 
-    send_mail(msg)
+    send_mail_async(msg)
 
 # ===============================
 # ROUTES
@@ -503,7 +517,7 @@ def submit():
     msg.attach(MIMEText("Thank you for contacting HackRoot.", "plain"))
     msg.attach(MIMEText(html_body, "html"))
 
-    send_mail(msg)
+    send_mail_async(msg)
     send_support_notification(
     name=name,
     email=email,
