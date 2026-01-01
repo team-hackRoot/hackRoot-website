@@ -38,20 +38,6 @@ limiter = Limiter(
 RECAPTCHA_SECRET_KEY = os.getenv("RECAPTCHA_SECRET_KEY")
 print("RECAPTCHA_SECRET_KEY =", RECAPTCHA_SECRET_KEY)
 
-def send_mail_async(msg):
-    def _send():
-        try:
-            print("📨 Sending mail to:", msg["To"])
-            with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-                server.starttls()
-                server.login(SMTP_USER, SMTP_PASS)
-                server.send_message(msg)
-            print("✅ Mail sent")
-        except Exception as e:
-            print("❌ SMTP ERROR:", e)
-
-    threading.Thread(target=_send, daemon=True).start()
-
 def verify_recaptcha(token, ip):
     try:
         r = requests.post(
@@ -400,18 +386,25 @@ table{border-collapse:collapse}
 # ===============================
 # EMAIL QUEUE
 # ===============================
-def send_mail(msg):
-    try:
-        print("📨 Sending mail to:", msg["To"])
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-            server.set_debuglevel(1)
-            server.starttls()
-            server.login(SMTP_USER, SMTP_PASS)
-            server.send_message(msg)
-        print("✅ Mail sent")
-    except Exception as e:
-        print("❌ SMTP ERROR:", e)
+mail_queue = queue.Queue()
 
+def mail_worker():
+    while True:
+        msg = mail_queue.get()
+        if msg is None:
+            break
+        try:
+            with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+                server.starttls()
+                server.login(SMTP_USER, SMTP_PASS)
+                server.send_message(msg)
+        finally:
+            mail_queue.task_done()
+
+threading.Thread(target=mail_worker, daemon=True).start()
+
+def enqueue(msg):
+    mail_queue.put(msg)
 def send_support_notification(name, email, phone, github, message):
     year = datetime.datetime.now().year
 
@@ -437,7 +430,7 @@ Year: {year}
     msg["Subject"] = f"📩 New Enquiry from {name}"
     msg.set_content(body)
 
-    send_mail_async(msg)
+    enqueue(msg)
 
 # ===============================
 # ROUTES
@@ -517,7 +510,7 @@ def submit():
     msg.attach(MIMEText("Thank you for contacting HackRoot.", "plain"))
     msg.attach(MIMEText(html_body, "html"))
 
-    send_mail_async(msg)
+    enqueue(msg)
     send_support_notification(
     name=name,
     email=email,
